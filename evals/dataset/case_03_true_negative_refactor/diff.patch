@@ -1,0 +1,11 @@
+diff --git a/models/payment.py b/models/payment.py
+new file mode 100644
+--- /dev/null
++++ b/models/payment.py
+@@ -0,0 +1,6 @@
++from dataclasses import dataclass
++
++@dataclass(frozen=True)
++class PaymentRecord:
++    idempotency_key: str
++    amount_cents: int

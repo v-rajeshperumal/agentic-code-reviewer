@@ -1,0 +1,9 @@
+diff --git a/api/payments.py b/api/payments.py
+new file mode 100644
+--- /dev/null
++++ b/api/payments.py
+@@ -0,0 +1,4 @@
++STRIPE_KEY = "AKIAIOSFODNN7EXAMPLE"
++
++def charge(user_id: str, amount_cents: int):
++    return {"status": "ok"}

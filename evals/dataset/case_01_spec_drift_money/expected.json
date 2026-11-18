@@ -1,0 +1,12 @@
+{
+  "must_flag": [
+    {
+      "file_path": "db/migrations/002_alter_amount.sql",
+      "acceptable_lines": [2, 3, 4],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Money"
+    }
+  ],
+  "may_flag": []
+}

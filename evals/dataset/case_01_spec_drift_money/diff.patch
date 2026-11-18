@@ -1,0 +1,9 @@
+diff --git a/db/migrations/002_alter_amount.sql b/db/migrations/002_alter_amount.sql
+new file mode 100644
+--- /dev/null
++++ b/db/migrations/002_alter_amount.sql
+@@ -0,0 +1,4 @@
++CREATE TABLE payments (
++    id UUID PRIMARY KEY,
++    amount FLOAT NOT NULL
++);
