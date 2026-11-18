@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -151,6 +152,55 @@ def eval_cmd(
     sys.path.insert(0, str(Path.cwd()))
     from evals.run_evals import execute_eval_suite
     execute_eval_suite(dataset_dir, ablation=ablation, runs=runs)
+
+
+def _caught(report: PRReviewReport, gold: dict) -> bool:
+    return any(
+        f.file_path == gold["file_path"]
+        and f.category.value == gold["category"]
+        and f.line in gold["acceptable_lines"]
+        for f in report.inline_findings
+    )
+
+
+@app.command()
+def demo(
+    examples_dir: Path = typer.Option(Path("examples"), help="Directory holding the demo patches"),
+) -> None:
+    """End-to-end demo: the planted-issue PR must FAIL with every issue caught; the fixed PR must PASS."""
+    expected = json.loads((examples_dir / "demo_expected.json").read_text(encoding="utf-8"))["must_flag"]
+    broken = run_review_pipeline(Path("."), (examples_dir / "demo_pr.patch").read_text(encoding="utf-8"))
+    fixed = run_review_pipeline(Path("."), (examples_dir / "demo_pr_fixed.patch").read_text(encoding="utf-8"))
+
+    table = Table(title="Planted issues in examples/demo_pr.patch")
+    for column in ("File:Line", "Expected", "Caught"):
+        table.add_column(column)
+    caught = 0
+    for gold in expected:
+        hit = _caught(broken, gold)
+        caught += hit
+        table.add_row(
+            f"{gold['file_path']}:{gold['line']}",
+            f"{gold['category']} / {gold['spec_reference']}",
+            "[green]yes[/green]" if hit else "[red]no[/red]",
+        )
+    console.print(table)
+    console.print(f"Broken PR status: [bold]{broken.spec_compliance_status}[/bold] (expected FAIL)")
+    console.print(
+        f"Fixed PR status:  [bold]{fixed.spec_compliance_status}[/bold] (expected PASS), "
+        f"{len(fixed.inline_findings)} inline finding(s)"
+    )
+
+    ok = caught == len(expected) and broken.spec_compliance_status == "FAIL" and fixed.spec_compliance_status == "PASS"
+    if not ok:
+        if get_provider_name() == "replay" and caught == 0:
+            console.print(
+                "[yellow]Replay has no cassettes for the demo yet. Run once with "
+                "SPECGUARD_PROVIDER=ollama or gemini to record them.[/yellow]"
+            )
+        console.print(f"[red]Demo failed: caught {caught}/{len(expected)} planted issues.[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Demo passed: caught {caught}/{len(expected)} planted issues and the fix is clean.[/green]")
 
 
 @app.command("record-cassettes")

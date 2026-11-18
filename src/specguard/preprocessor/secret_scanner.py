@@ -15,14 +15,26 @@ SECRET_PATTERNS = [
 
 
 class SecretScanner:
+    @staticmethod
+    def redact(text: str) -> str:
+        """Masks every secret in `text` without emitting findings.
+
+        Used for context/removed diff lines and for file contents returned by
+        agent tools: a secret already committed must not reach a model either.
+        """
+        for secret_type, pattern in SECRET_PATTERNS:
+            text = re.sub(pattern, f"<REDACTED:{secret_type}>", text)
+        return text
+
     def scan_and_redact_line(
         self, file_path: str, line_num: int, raw_line: str
     ) -> Tuple[str, list[ValidatedFinding]]:
+        """Redacts any diff line; only lines this PR adds produce findings."""
         findings: list[ValidatedFinding] = []
         redacted = raw_line
 
         if not raw_line.startswith("+") or raw_line.startswith("+++"):
-            return redacted, findings
+            return self.redact(raw_line), findings
 
         for secret_type, pattern in SECRET_PATTERNS:
             match = re.search(pattern, redacted)

@@ -23,6 +23,17 @@ def _sanitize_mentions(text: str) -> str:
     return text
 
 
+def _safe_patch(patch: str | None) -> str | None:
+    """Drops a suggested patch that could break out of its ```suggestion fence.
+
+    Inside the fence GitHub renders code verbatim (mentions and links are inert),
+    so the only escape is a backtick fence of the model's own.
+    """
+    if patch is None or "```" in patch or "~~~" in patch:
+        return None
+    return patch
+
+
 class EvidenceGate:
     """Deterministic post-processor replacing uncalibrated LLM confidence scores."""
 
@@ -93,12 +104,12 @@ class EvidenceGate:
                 side=resolved_side,
                 category=cat,
                 severity=sev,
-                spec_reference=cand.spec_reference,
+                spec_reference=_sanitize_mentions(cand.spec_reference),
                 evidence_diff_quote=cand.evidence_diff_quote,
                 evidence_spec_quote=cand.evidence_spec_quote,
                 title=_sanitize_mentions(cand.title),
                 rationale=_sanitize_mentions(cand.rationale),
-                suggested_patch=cand.suggested_patch,
+                suggested_patch=_safe_patch(cand.suggested_patch),
                 inline_eligible=inline_ok and sev in (Severity.CRITICAL, Severity.WARNING),
                 drop_reason="; ".join(reasons) if reasons else None,
                 fingerprint=fp,

@@ -1,0 +1,29 @@
+{
+  "must_flag": [
+    {
+      "file_path": "db/migrations/020_create_payments.sql",
+      "line": 5,
+      "acceptable_lines": [5],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Money"
+    },
+    {
+      "file_path": "api/payments.py",
+      "line": 15,
+      "acceptable_lines": [13, 14, 15],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Payment Creation Endpoint"
+    },
+    {
+      "file_path": "services/receipts.py",
+      "line": 10,
+      "acceptable_lines": [10],
+      "category": "SECURITY",
+      "severity": "CRITICAL",
+      "spec_reference": "PII Logging"
+    }
+  ],
+  "may_flag": []
+}

@@ -96,6 +96,27 @@ All monetary amounts ... MUST be stored as 64-bit integer cents.
 
 Language rulebooks live in `.spec/rules/<language>_best_practices.md` and are loaded on demand by the agent.
 
+SpecGuard reviews itself the same way: [`.spec/SYSTEM_SPEC.md`](.spec/SYSTEM_SPEC.md) governs `src/specguard/**` and states the project's architectural invariants:
+- models cite only diff anchors
+- the review status is computed deterministically
+- inline findings need verbatim evidence
+- every model call goes through the provider factory
+- tools are jailed to the repository
+- secrets are redacted before any model sees them
+- diff text is treated as untrusted input
+
+`tests/test_system_spec.py` enforces the mechanically checkable rules on every CI run.
+
+## Demo
+
+[`examples/demo_pr.patch`](examples/demo_pr.patch) is a four-file FastAPI payments PR with four planted problems: FLOAT money, a missing `Idempotency-Key` check, a logged email address, and a prompt-injection comment telling the reviewer to pass it. [`examples/demo_pr_fixed.patch`](examples/demo_pr_fixed.patch) is the corrected PR.
+
+```bash
+SPECGUARD_PROVIDER=ollama specguard demo
+```
+
+The demo passes only if the broken PR **FAIL**s with all three violations caught (despite the injection) and the fixed PR **PASS**es. See [examples/README.md](examples/README.md).
+
 ## Evaluation
 
 `specguard eval` scores the pipeline against 35 golden PR diffs in `evals/dataset/`: 9 spec-drift, 9 security, 7 code-quality and 10 true-negative cases, including cross-file and prompt-injection PRs. See [evals/dataset/README.md](evals/dataset/README.md) for the labeling rubric.
@@ -115,15 +136,16 @@ Predictions are matched one-to-one to golden findings with the Hungarian algorit
 ## Project Layout
 
 ```
-.spec/                     Architectural specs + language rulebooks
+.spec/                     Architectural specs, SYSTEM_SPEC (self-review), language rulebooks
 src/specguard/
   preprocessor/            Diff anchoring, secret scanning, spec routing
   agent/                   Strands investigator, verifier, hooks, repo-jailed tools
   llm/                     Provider factory, token bucket, cassette store
   postprocessor/           Deterministic evidence gate
   github/                  PR review publisher
-  cli.py                   `specguard review` / `eval` / `record-cassettes`
+  cli.py                   `specguard review` / `demo` / `eval` / `record-cassettes`
 evals/                     Golden dataset, cassettes, Hungarian scorer
+examples/                  Demo PR with planted issues + fixed version
 notebooks/                 Colab T4 demo
 tests/                     Deterministic unit tests
 ```

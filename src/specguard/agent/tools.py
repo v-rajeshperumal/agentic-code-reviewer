@@ -1,5 +1,6 @@
 from pathlib import Path
 from strands import tool
+from specguard.preprocessor.secret_scanner import SecretScanner
 from specguard.preprocessor.spec_batcher import SpecDocument
 
 
@@ -61,6 +62,7 @@ class RepoToolContext:
             s = max(1, start_line)
             e = min(len(lines), max(s, min(end_line, s + 99)))
             numbered = [f"{i}: {lines[i - 1]}" for i in range(s, e + 1)]
-            return "\n".join(numbered)
+            # Repository files can hold committed secrets; mask them before the model sees them.
+            return SecretScanner.redact("\n".join(numbered))
 
         return [list_spec_sections, read_spec_section, load_rulebook, get_surrounding_code]

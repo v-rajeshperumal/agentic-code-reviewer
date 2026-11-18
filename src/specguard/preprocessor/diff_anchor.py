@@ -72,20 +72,20 @@ class DiffAnchorParser:
                         old_line = int(hunk_match.group(1))
                         new_line = int(hunk_match.group(2))
                     in_hunk = True
-                    rendered_lines.append(line)
+                    rendered_lines.append(self.scanner.redact(line))
                     continue
 
                 # Everything before the first hunk is a file header (index, mode,
                 # similarity, rename, ---/+++). Inside a hunk, a line like
                 # "--- foo" is a removed line, so headers are only matched here.
                 if not in_hunk:
-                    rendered_lines.append(line)
+                    rendered_lines.append(self.scanner.redact(line))
                     continue
 
                 # "\ No newline at end of file" annotates the previous line and
                 # occupies no line number on either side.
                 if line.startswith("\\"):
-                    rendered_lines.append(line)
+                    rendered_lines.append(self.scanner.redact(line))
                     continue
 
                 if line.startswith("+"):
@@ -103,24 +103,28 @@ class DiffAnchorParser:
                     rendered_lines.append(f"[R{new_line}] {redacted_line}")
                     new_line += 1
                 elif line.startswith("-"):
+                    # Removed and context lines are redacted too (no findings: the
+                    # PR didn't add them), so an existing secret never reaches a model.
+                    safe_line = self.scanner.redact(line)
                     anchor_key = f"{target_path}:L{old_line}"
                     result.anchor_map[anchor_key] = AnchorTarget(
                         file_path=target_path,
                         line=old_line,
                         side="LEFT",
-                        raw_code=line[1:],
+                        raw_code=safe_line[1:],
                     )
-                    rendered_lines.append(f"[L{old_line}] {line}")
+                    rendered_lines.append(f"[L{old_line}] {safe_line}")
                     old_line += 1
                 else:
+                    safe_line = self.scanner.redact(line)
                     anchor_key = f"{target_path}:R{new_line}"
                     result.anchor_map[anchor_key] = AnchorTarget(
                         file_path=target_path,
                         line=new_line,
                         side="RIGHT",
-                        raw_code=line[1:] if line.startswith(" ") else line,
+                        raw_code=safe_line[1:] if safe_line.startswith(" ") else safe_line,
                     )
-                    rendered_lines.append(f"[R{new_line}] {line}")
+                    rendered_lines.append(f"[R{new_line}] {safe_line}")
                     old_line += 1
                     new_line += 1
 
