@@ -1,9 +1,11 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Literal
 import typer
+from opentelemetry import trace
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -18,6 +20,46 @@ from specguard.schemas import PRReviewReport, ValidatedFinding
 
 app = typer.Typer(help="SpecGuard: Agentic PR & System-Spec Compliance Reviewer")
 console = Console()
+
+TraceMode = Literal["off", "console", "otlp"]
+
+
+def resolve_trace_mode(flag: str | None, env: str | None) -> TraceMode:
+    """`--trace` wins over SPECGUARD_TRACE. `1`/`true` mean console."""
+    value = (flag or env or "off").strip().lower()
+    if value in ("", "0", "false", "off", "no"):
+        return "off"
+    if value in ("1", "true", "yes", "console"):
+        return "console"
+    if value == "otlp":
+        return "otlp"
+    raise typer.BadParameter(f"Unknown trace mode '{value}'. Use console or otlp.")
+
+
+def configure_tracing(mode: TraceMode) -> None:
+    """Routes Strands' built-in spans (agent, model, tool calls) and SpecGuard's own
+    spans (batches, verifier verdicts, gate decisions) to an exporter."""
+    if mode == "off":
+        return
+    from strands.telemetry import StrandsTelemetry
+
+    telemetry = StrandsTelemetry()
+    if mode == "console":
+        telemetry.setup_console_exporter()
+        return
+    try:
+        telemetry.setup_otlp_exporter()  # endpoint from OTEL_EXPORTER_OTLP_ENDPOINT
+    except ImportError as err:
+        raise typer.BadParameter('OTLP export needs: pip install -e ".[trace]"') from err
+
+
+@app.callback()
+def main(
+    trace_mode: str | None = typer.Option(
+        None, "--trace", help="Emit OpenTelemetry spans: console or otlp (or set SPECGUARD_TRACE)"
+    ),
+) -> None:
+    configure_tracing(resolve_trace_mode(trace_mode, os.getenv("SPECGUARD_TRACE")))
 
 
 PipelineMode = Literal["baseline", "agent", "full"]
@@ -67,38 +109,73 @@ def run_review_pipeline(
     all_inline = list(parsed.deterministic_findings)
     all_summary = []
     all_audit = []
+    tracer = trace.get_tracer("specguard")  # no-op unless tracing is configured
 
-    for spec_doc, files in batches:
-        batch_diff = "\n\n".join(parsed.anchored_by_file[f] for f in files if f in parsed.anchored_by_file)
-        if mode == "baseline":
-            candidates, tool_ctx, _ = investigator.single_shot_batch(spec_doc, batch_diff)
-        else:
-            candidates, tool_ctx, _ = investigator.investigate_batch(spec_doc, batch_diff)
+    with tracer.start_as_current_span("specguard.review") as review_span:
+        review_span.set_attributes({
+            "specguard.mode": mode,
+            "specguard.provider": get_provider_name(),
+            "specguard.files": len(parsed.anchored_by_file),
+            "specguard.secret_findings": len(parsed.deterministic_findings),
+        })
 
-        surviving = []
-        for cand in candidates:
-            if mode == "full":
-                verdict = verifier.verify(spec_doc, cand, batch_diff)
-                if not verdict.keep:
-                    all_audit.append(f"Verifier rejected `{cand.title}`: {verdict.reason}")
-                    continue
-            surviving.append(cand)
+        for spec_doc, files in batches:
+            with tracer.start_as_current_span("specguard.batch") as batch_span:
+                batch_span.set_attributes({"specguard.spec": spec_doc.name, "specguard.files": files})
+                batch_diff = "\n\n".join(
+                    parsed.anchored_by_file[f] for f in files if f in parsed.anchored_by_file
+                )
+                if mode == "baseline":
+                    candidates, tool_ctx, tool_trace = investigator.single_shot_batch(spec_doc, batch_diff)
+                else:
+                    candidates, tool_ctx, tool_trace = investigator.investigate_batch(spec_doc, batch_diff)
+                # Live runs also get Strands' own model/tool spans; this event keeps the
+                # tool sequence visible when results come from a cassette.
+                batch_span.add_event("specguard.tool_calls", {"calls": tool_trace})
+                batch_span.set_attribute("specguard.candidates", len(candidates))
 
-        inline, summary, audit = gate.validate_candidates(
-            surviving, parsed, tool_ctx, require_evidence=(mode != "baseline")
+                surviving = []
+                for cand in candidates:
+                    if mode == "full":
+                        with tracer.start_as_current_span("specguard.verify") as verify_span:
+                            verdict = verifier.verify(spec_doc, cand, batch_diff)
+                            verify_span.set_attributes({
+                                "specguard.finding.title": cand.title,
+                                "specguard.finding.file": cand.file_path,
+                                "specguard.finding.anchor": cand.anchor,
+                                "specguard.finding.severity": cand.severity,
+                                "specguard.verdict.keep": verdict.keep,
+                                "specguard.verdict.reason": verdict.reason,
+                            })
+                        if not verdict.keep:
+                            all_audit.append(f"Verifier rejected `{cand.title}`: {verdict.reason}")
+                            continue
+                    surviving.append(cand)
+
+                with tracer.start_as_current_span("specguard.evidence_gate") as gate_span:
+                    inline, summary, audit = gate.validate_candidates(
+                        surviving, parsed, tool_ctx, require_evidence=(mode != "baseline")
+                    )
+                    gate_span.set_attributes({"specguard.inline": len(inline), "specguard.demoted": len(summary)})
+                    for entry in audit:
+                        gate_span.add_event("specguard.gate_decision", {"detail": entry})
+                all_inline.extend(inline)
+                all_summary.extend(summary)
+                all_audit.extend(audit)
+
+        all_inline, dedupe_audit = _dedupe(all_inline)
+        all_summary, dedupe_audit_2 = _dedupe(all_summary)
+        all_audit.extend(dedupe_audit + dedupe_audit_2)
+
+        summary_text = (
+            f"Reviewed {len(parsed.anchored_by_file)} modified file(s) across {len(batches)} governing spec(s)."
         )
-        all_inline.extend(inline)
-        all_summary.extend(summary)
-        all_audit.extend(audit)
-
-    all_inline, dedupe_audit = _dedupe(all_inline)
-    all_summary, dedupe_audit_2 = _dedupe(all_summary)
-    all_audit.extend(dedupe_audit + dedupe_audit_2)
-
-    summary_text = (
-        f"Reviewed {len(parsed.anchored_by_file)} modified file(s) across {len(batches)} governing spec(s)."
-    )
-    return gate.build_report(summary_text, all_inline, all_summary, all_audit)
+        report = gate.build_report(summary_text, all_inline, all_summary, all_audit)
+        review_span.set_attributes({
+            "specguard.status": report.spec_compliance_status,
+            "specguard.inline_findings": len(report.inline_findings),
+        })
+        return report
 
 
 @app.command()
@@ -138,7 +215,13 @@ def review(
         json_out.write_text(report.model_dump_json(indent=2), encoding="utf-8")
 
     if post_github and pr_number and commit_sha:
-        GitHubReviewPublisher().publish_review(pr_number, commit_sha, report)
+        changed_files = list(DiffAnchorParser().parse(raw_diff).anchored_by_file)
+        published = GitHubReviewPublisher().publish_review(pr_number, commit_sha, report, changed_files)
+        console.print(
+            f"GitHub: {len(published.posted)} new, {len(published.skipped)} already posted, "
+            f"{len(published.resolved)} resolved, summary {published.summary_action}"
+            + (f", dismissed {len(published.dismissed_reviews)} blocking review(s)" if published.dismissed_reviews else "")
+        )
 
 
 @app.command("eval")

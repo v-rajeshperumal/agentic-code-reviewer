@@ -1,7 +1,7 @@
 import re
 from typing import Tuple
 from specguard.agent.tools import RepoToolContext
-from specguard.preprocessor.diff_anchor import ParsedDiff
+from specguard.preprocessor.diff_anchor import AnchorTarget, ParsedDiff
 from specguard.schemas import (
     FindingCategory,
     PRReviewReport,
@@ -21,6 +21,62 @@ def _sanitize_mentions(text: str) -> str:
     text = re.sub(r"@([a-zA-Z0-9_\-]+)", r"`@\1`", text)
     text = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", r"\1 (`\2`)", text)
     return text
+
+
+SNAP_WINDOW = 3
+
+
+def _targets_for(parsed_diff: ParsedDiff, file_path: str) -> list[AnchorTarget]:
+    """All diff lines of one file, in diff order."""
+    return [t for t in parsed_diff.anchor_map.values() if t.file_path == file_path]
+
+
+def _parse_anchor(anchor: str) -> tuple[str, int] | None:
+    """Accepts `R42`, `[R42]`, `r 42`, `L7`; returns ("RIGHT"|"LEFT", line)."""
+    match = re.search(r"([RLrl])\s*(\d+)", anchor)
+    if not match:
+        return None
+    return ("RIGHT" if match.group(1).upper() == "R" else "LEFT"), int(match.group(2))
+
+
+def _label(target: AnchorTarget) -> str:
+    return f"{'R' if target.side == 'RIGHT' else 'L'}{target.line}"
+
+
+def _resolve_anchor(
+    anchor: str, diff_quote: str, targets: list[AnchorTarget]
+) -> tuple[AnchorTarget | None, str | None]:
+    """Picks the diff line a finding should be posted on.
+
+    1. If the quoted code is found on diff lines, use the one nearest the model's
+       anchor. The quote is verified evidence; the anchor is the model's claim.
+    2. Otherwise keep the anchor if it exists.
+    3. Otherwise snap to the nearest line on the same side within ±SNAP_WINDOW.
+
+    Returns (target or None, audit note or None).
+    """
+    parsed = _parse_anchor(anchor)
+    exact = next((t for t in targets if parsed and (t.side, t.line) == parsed), None)
+
+    needle = next((_normalize_ws(l) for l in diff_quote.splitlines() if l.strip()), "")
+    hits = [t for t in targets if needle and needle in _normalize_ws(t.raw_code)]
+    if hits:
+        if exact in hits:
+            return exact, None
+        side, ref = parsed if parsed else (hits[0].side, hits[0].line)
+        best = min(hits, key=lambda t: (abs(t.line - ref), t.side != side))
+        how = f"moved from {anchor}" if exact else f"resolved missing anchor {anchor}"
+        return best, f"{how} to {_label(best)} (evidence quote location)"
+
+    if exact:
+        return exact, None
+    if parsed:
+        side, line = parsed
+        near = [t for t in targets if t.side == side and abs(t.line - line) <= SNAP_WINDOW]
+        if near:
+            best = min(near, key=lambda t: abs(t.line - line))
+            return best, f"snapped from {anchor} to {_label(best)} (nearest diff line)"
+    return None, None
 
 
 def _safe_patch(patch: str | None) -> str | None:
@@ -51,13 +107,15 @@ class EvidenceGate:
         audit_log: list[str] = []
 
         for cand in candidates:
-            clean_anchor = cand.anchor.strip("[]")
-            lookup_key = f"{cand.file_path}:{clean_anchor}"
-            target = parsed_diff.anchor_map.get(lookup_key)
+            targets = _targets_for(parsed_diff, cand.file_path)
 
-            # 1. Anchor & diff line validation
+            # 1. Anchor resolution: the verified quote decides the line, the model's
+            #    anchor only breaks ties (see _resolve_anchor).
             inline_ok = True
             reasons: list[str] = []
+            target, note = _resolve_anchor(cand.anchor, cand.evidence_diff_quote, targets)
+            if note:
+                audit_log.append(f"`{cand.title}` ({cand.file_path}): {note}")
             if target is None:
                 inline_ok = False
                 reasons.append(f"anchor `{cand.anchor}` not found in active diff hunk")
@@ -65,9 +123,12 @@ class EvidenceGate:
             else:
                 resolved_line, resolved_side = target.line, target.side
 
-            # 2. Exact diff quote verification
-            file_diff_text = parsed_diff.anchored_by_file.get(cand.file_path, "")
-            if require_evidence and _normalize_ws(cand.evidence_diff_quote) not in _normalize_ws(file_diff_text):
+            # 2. Exact diff quote verification, against the anchored rendering or the
+            #    plain code (so a multi-line quote need not repeat the [R#] prefixes)
+            quote = _normalize_ws(cand.evidence_diff_quote)
+            anchored_text = _normalize_ws(parsed_diff.anchored_by_file.get(cand.file_path, ""))
+            plain_text = _normalize_ws("\n".join(t.raw_code for t in targets))
+            if require_evidence and (not quote or (quote not in anchored_text and quote not in plain_text)):
                 inline_ok = False
                 reasons.append("evidence_diff_quote not matched in diff")
 

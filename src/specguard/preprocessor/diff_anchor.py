@@ -40,6 +40,60 @@ class DiffAnchorParser:
     def _is_ignored(self, path: str) -> bool:
         return any(fnmatch.fnmatch(path, pat) for pat in IGNORED_GLOBS)
 
+    @staticmethod
+    def _unquote(path: str) -> str:
+        """Undoes git's C-style quoting of paths with spaces, quotes or non-ASCII bytes."""
+        path = path.rstrip("\t")
+        if len(path) >= 2 and path[0] == path[-1] == '"':
+            raw = path[1:-1].encode("latin-1", "backslashreplace").decode("unicode_escape")
+            path = raw.encode("latin-1").decode("utf-8", "replace")
+        return path
+
+    @classmethod
+    def _strip_prefix(cls, path: str, prefix: str) -> str | None:
+        path = cls._unquote(path)
+        if path == "/dev/null":
+            return None
+        return path[len(prefix):] if path.startswith(prefix) else path
+
+    @classmethod
+    def _file_paths(cls, lines: list[str]) -> tuple[str | None, str | None]:
+        """Returns (old_path, new_path); None means the file did not exist on that side.
+
+        Prefers the explicit `rename from/to` and `---`/`+++` headers over the
+        `diff --git` line, which is ambiguous when paths contain spaces.
+        """
+        old_path = new_path = None
+        seen_old = seen_new = False
+        for line in lines[1:]:
+            if line.startswith("@@"):
+                break
+            if line.startswith("rename from "):
+                old_path, seen_old = cls._unquote(line[len("rename from "):]), True
+            elif line.startswith("rename to "):
+                new_path, seen_new = cls._unquote(line[len("rename to "):]), True
+            elif line.startswith("--- ") and not seen_old:
+                old_path, seen_old = cls._strip_prefix(line[4:], "a/"), True
+            elif line.startswith("+++ ") and not seen_new:
+                new_path, seen_new = cls._strip_prefix(line[4:], "b/"), True
+
+        if not (seen_old and seen_new):
+            # Mode-only change or pure rename without hunks: fall back to the git header.
+            header = lines[0]
+            quoted = re.findall(r'"(?:[^"\\]|\\.)*"', header)
+            if len(quoted) == 2:
+                a, b = (cls._unquote(q) for q in quoted)
+            else:
+                match = re.search(r"a/(.+?)\s+b/(.+)$", header)
+                if not match:
+                    return None, None
+                a, b = "a/" + match.group(1), "b/" + match.group(2)
+            if not seen_old:
+                old_path = a[2:] if a.startswith("a/") else a
+            if not seen_new:
+                new_path = b[2:] if b.startswith("b/") else b
+        return old_path, new_path
+
     def parse(self, raw_diff: str) -> ParsedDiff:
         result = ParsedDiff()
         chunks = re.split(r"^diff --git ", raw_diff, flags=re.MULTILINE)
@@ -49,12 +103,10 @@ class DiffAnchorParser:
                 continue
 
             lines = chunk.splitlines()
-            header_match = re.search(r"a/(.+?)\s+b/(.+)$", lines[0])
-            if not header_match:
+            old_path, new_path = self._file_paths(lines)
+            target_path = new_path or old_path  # deleted files keep their old path
+            if not target_path:
                 continue
-
-            old_path, new_path = header_match.group(1), header_match.group(2)
-            target_path = new_path if new_path != "/dev/null" else old_path
 
             if self._is_ignored(target_path) or "Binary files " in chunk:
                 result.skipped_files.append(target_path)
