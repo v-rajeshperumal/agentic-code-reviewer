@@ -36,3 +36,5 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `evals/` lives at the repo root, outside the installed package.
+pythonpath = ["."]
