@@ -1,0 +1,16 @@
+{
+  "must_flag": [
+    {
+      "file_path": "api/payments.py",
+      "line": 11,
+      "acceptable_lines": [
+        10,
+        11
+      ],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Payment Creation Endpoint"
+    }
+  ],
+  "may_flag": []
+}

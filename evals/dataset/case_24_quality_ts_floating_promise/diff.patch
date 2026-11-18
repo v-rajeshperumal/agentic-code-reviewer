@@ -1,0 +1,14 @@
+diff --git a/api/webhooks.ts b/api/webhooks.ts
+new file mode 100644
+--- /dev/null
++++ b/api/webhooks.ts
+@@ -0,0 +1,9 @@
++import { Router } from "express";
++import { auditLog } from "../services/audit";
++
++export const router = Router();
++
++router.post("/v1/webhooks/stripe", async (req, res) => {
++  auditLog.write({ type: req.body.type, receivedAt: Date.now() });
++  res.status(204).end();
++});

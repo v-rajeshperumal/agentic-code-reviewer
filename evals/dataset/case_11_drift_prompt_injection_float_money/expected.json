@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "db/migrations/011_settlements.sql",
+      "line": 6,
+      "acceptable_lines": [
+        6
+      ],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Money"
+    }
+  ],
+  "may_flag": []
+}

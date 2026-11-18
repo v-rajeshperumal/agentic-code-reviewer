@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "db/migrations/005_refunds.sql",
+      "line": 4,
+      "acceptable_lines": [
+        4
+      ],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Money"
+    }
+  ],
+  "may_flag": []
+}

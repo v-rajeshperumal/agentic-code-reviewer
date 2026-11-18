@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "models/invoice.py",
+      "line": 9,
+      "acceptable_lines": [
+        9
+      ],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Money"
+    }
+  ],
+  "may_flag": []
+}

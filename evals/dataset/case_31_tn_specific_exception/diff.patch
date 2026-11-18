@@ -1,0 +1,18 @@
+diff --git a/services/storage.py b/services/storage.py
+new file mode 100644
+--- /dev/null
++++ b/services/storage.py
+@@ -0,0 +1,13 @@
++import json
++import logging
++
++logger = logging.getLogger(__name__)
++
++
++def load_statement(path):
++    try:
++        with open(path) as fh:
++            return json.load(fh)
++    except FileNotFoundError:
++        logger.warning("Statement file missing: %s", path)
++        raise

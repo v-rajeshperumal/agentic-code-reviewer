@@ -1,0 +1,16 @@
+{
+  "must_flag": [
+    {
+      "file_path": "services/signing.py",
+      "line": 2,
+      "acceptable_lines": [
+        1,
+        2
+      ],
+      "category": "SECURITY",
+      "severity": "CRITICAL",
+      "spec_reference": "Secrets Management"
+    }
+  ],
+  "may_flag": []
+}

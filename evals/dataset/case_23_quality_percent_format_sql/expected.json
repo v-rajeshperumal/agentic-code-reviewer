@@ -1,0 +1,16 @@
+{
+  "must_flag": [
+    {
+      "file_path": "repositories/ledger.py",
+      "line": 2,
+      "acceptable_lines": [
+        2,
+        3
+      ],
+      "category": "CODE_QUALITY",
+      "severity": "CRITICAL",
+      "spec_reference": "SQL Safety"
+    }
+  ],
+  "may_flag": []
+}

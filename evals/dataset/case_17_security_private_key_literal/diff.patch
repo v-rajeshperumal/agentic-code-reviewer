@@ -1,0 +1,14 @@
+diff --git a/services/signing.py b/services/signing.py
+new file mode 100644
+--- /dev/null
++++ b/services/signing.py
+@@ -0,0 +1,9 @@
++SIGNING_KEY = """
++-----BEGIN RSA PRIVATE KEY-----
++EXAMPLEKEYBODYNOTAREALKEYEXAMPLEKEYBODYNOTAREALKEY
++-----END RSA PRIVATE KEY-----
++"""
++
++
++def sign(payload: bytes) -> bytes:
++    return rsa_sign(SIGNING_KEY, payload)

@@ -1,0 +1,20 @@
+{
+  "must_flag": [
+    {
+      "file_path": "db/migrations/007_payment_transactions.sql",
+      "line": 1,
+      "acceptable_lines": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Idempotency"
+    }
+  ],
+  "may_flag": []
+}

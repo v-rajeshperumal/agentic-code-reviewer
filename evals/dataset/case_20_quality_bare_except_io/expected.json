@@ -1,0 +1,16 @@
+{
+  "must_flag": [
+    {
+      "file_path": "services/storage.py",
+      "line": 8,
+      "acceptable_lines": [
+        8,
+        9
+      ],
+      "category": "CODE_QUALITY",
+      "severity": "WARNING",
+      "spec_reference": "Error Handling"
+    }
+  ],
+  "may_flag": []
+}

@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "repositories/users.py",
+      "line": 2,
+      "acceptable_lines": [
+        2
+      ],
+      "category": "CODE_QUALITY",
+      "severity": "CRITICAL",
+      "spec_reference": "SQL Safety"
+    }
+  ],
+  "may_flag": []
+}

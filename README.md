@@ -98,7 +98,19 @@ Language rulebooks live in `.spec/rules/<language>_best_practices.md` and are lo
 
 ## Evaluation
 
-`specguard eval` scores the pipeline against `evals/dataset/*` using one-to-one Hungarian matching (`scipy.optimize.linear_sum_assignment`) between predicted and golden findings, reporting precision, recall, exact-line accuracy, and latency. `--ablation` compares runs with and without the adversarial verifier.
+`specguard eval` scores the pipeline against 35 golden PR diffs in `evals/dataset/`: 9 spec-drift, 9 security, 7 code-quality and 10 true-negative cases, including cross-file and prompt-injection PRs. See [evals/dataset/README.md](evals/dataset/README.md) for the labeling rubric.
+
+Predictions are matched one-to-one to golden findings with the Hungarian algorithm (`scipy.optimize.linear_sum_assignment`). The scorer reports:
+
+| Metric | Meaning |
+| :--- | :--- |
+| Precision / Recall | Over inline findings, matched by file, category and an acceptable line |
+| Exact Line Acc | Matched findings placed on the golden primary line |
+| Severity Acc | Matched findings with the golden severity |
+| Citation Acc | Matched findings citing the golden spec section |
+| Latency | Wall-clock time for the whole dataset |
+
+`--ablation` compares three configurations: **Single-Shot Baseline** (one call with every rule inlined, no tools, no quote checks), **Investigator + Tools + EvidenceGate**, and **Full SpecGuard + Verifier**. `--runs N` repeats each configuration and reports mean ± std. This is only meaningful with a live provider, since replay is deterministic.
 
 ## Project Layout
 

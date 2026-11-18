@@ -1,0 +1,15 @@
+diff --git a/models/invoice.py b/models/invoice.py
+new file mode 100644
+--- /dev/null
++++ b/models/invoice.py
+@@ -0,0 +1,10 @@
++from dataclasses import dataclass
++from uuid import UUID
++
++
++@dataclass(frozen=True)
++class Invoice:
++    id: UUID
++    customer_id: UUID
++    total: float
++    currency: str = "USD"

@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "services/auth.py",
+      "line": 8,
+      "acceptable_lines": [
+        8
+      ],
+      "category": "SECURITY",
+      "severity": "CRITICAL",
+      "spec_reference": "PII Logging"
+    }
+  ],
+  "may_flag": []
+}

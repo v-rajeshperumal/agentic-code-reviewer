@@ -1,0 +1,26 @@
+diff --git a/db/migrations/010_payouts.sql b/db/migrations/010_payouts.sql
+new file mode 100644
+--- /dev/null
++++ b/db/migrations/010_payouts.sql
+@@ -0,0 +1,5 @@
++CREATE TABLE payouts (
++    id UUID PRIMARY KEY,
++    idempotency_key TEXT NOT NULL UNIQUE,
++    amount REAL NOT NULL
++);
+diff --git a/api/payments.py b/api/payments.py
+new file mode 100644
+--- /dev/null
++++ b/api/payments.py
+@@ -0,0 +1,11 @@
++from fastapi import APIRouter
++from api.schemas import PaymentRequest
++from services.processor import processor
++
++router = APIRouter()
++
++
++@router.post("/v1/payments")
++async def create_payment(body: PaymentRequest):
++    payment = await processor.charge(body.customer_id, body.amount)
++    return {"payment_id": payment.id}

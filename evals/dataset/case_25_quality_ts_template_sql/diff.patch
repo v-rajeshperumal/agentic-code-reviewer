@@ -1,0 +1,11 @@
+diff --git a/services/reports.ts b/services/reports.ts
+new file mode 100644
+--- /dev/null
++++ b/services/reports.ts
+@@ -0,0 +1,6 @@
++import { db } from "./db";
++
++export async function orderReport(orderId: string) {
++  const rows = await db.query(`SELECT * FROM orders WHERE id = '${orderId}'`);
++  return rows;
++}

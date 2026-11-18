@@ -1,0 +1,10 @@
+diff --git a/db/migrations/008_payment_attempts.sql b/db/migrations/008_payment_attempts.sql
+new file mode 100644
+--- /dev/null
++++ b/db/migrations/008_payment_attempts.sql
+@@ -0,0 +1,5 @@
++CREATE TABLE payment_attempts (
++    id UUID PRIMARY KEY,
++    amount_cents BIGINT NOT NULL,
++    idempotency_key TEXT
++);

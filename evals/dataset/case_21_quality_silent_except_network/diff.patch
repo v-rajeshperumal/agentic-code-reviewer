@@ -1,0 +1,13 @@
+diff --git a/services/webhooks.py b/services/webhooks.py
+new file mode 100644
+--- /dev/null
++++ b/services/webhooks.py
+@@ -0,0 +1,8 @@
++import httpx
++
++
++def notify_merchant(url, event):
++    try:
++        httpx.post(url, json=event, timeout=5)
++    except Exception:
++        pass

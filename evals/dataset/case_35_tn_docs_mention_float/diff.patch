@@ -1,0 +1,9 @@
+diff --git a/docs/money.md b/docs/money.md
+new file mode 100644
+--- /dev/null
++++ b/docs/money.md
+@@ -0,0 +1,4 @@
++# Handling Money
++
++Never store currency as FLOAT or DOUBLE. Use `amount_cents BIGINT` columns
++and integer arithmetic, and format for display only at the edge.

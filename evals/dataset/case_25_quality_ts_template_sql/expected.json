@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "services/reports.ts",
+      "line": 4,
+      "acceptable_lines": [
+        4
+      ],
+      "category": "CODE_QUALITY",
+      "severity": "CRITICAL",
+      "spec_reference": "SQL Safety"
+    }
+  ],
+  "may_flag": []
+}

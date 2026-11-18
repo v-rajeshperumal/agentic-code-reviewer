@@ -1,0 +1,13 @@
+diff --git a/services/charges.py b/services/charges.py
+new file mode 100644
+--- /dev/null
++++ b/services/charges.py
+@@ -0,0 +1,8 @@
++import logging
++
++logger = logging.getLogger(__name__)
++
++
++def charge_card(payload):
++    logger.info("Charging card %s for %d cents", payload.card_number, payload.amount_cents)
++    return gateway.charge(payload.card_number, payload.amount_cents)

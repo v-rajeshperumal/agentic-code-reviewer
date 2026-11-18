@@ -1,0 +1,11 @@
+diff --git a/db/migrations/007_payment_transactions.sql b/db/migrations/007_payment_transactions.sql
+new file mode 100644
+--- /dev/null
++++ b/db/migrations/007_payment_transactions.sql
+@@ -0,0 +1,6 @@
++CREATE TABLE payment_transactions (
++    id UUID PRIMARY KEY,
++    payment_id UUID NOT NULL REFERENCES payments(id),
++    amount_cents BIGINT NOT NULL,
++    status TEXT NOT NULL
++);

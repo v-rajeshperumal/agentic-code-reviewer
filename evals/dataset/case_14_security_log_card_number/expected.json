@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "services/charges.py",
+      "line": 7,
+      "acceptable_lines": [
+        7
+      ],
+      "category": "SECURITY",
+      "severity": "CRITICAL",
+      "spec_reference": "PII Logging"
+    }
+  ],
+  "may_flag": []
+}

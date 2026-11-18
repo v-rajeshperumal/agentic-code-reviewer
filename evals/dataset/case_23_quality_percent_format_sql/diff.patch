@@ -1,0 +1,9 @@
+diff --git a/repositories/ledger.py b/repositories/ledger.py
+new file mode 100644
+--- /dev/null
++++ b/repositories/ledger.py
+@@ -0,0 +1,4 @@
++def entries_for_account(cursor, account_id):
++    query = "SELECT id, amount_cents FROM ledger WHERE account_id = '%s'" % account_id
++    cursor.execute(query)
++    return cursor.fetchall()

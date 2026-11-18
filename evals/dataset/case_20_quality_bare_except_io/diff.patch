@@ -1,0 +1,14 @@
+diff --git a/services/storage.py b/services/storage.py
+new file mode 100644
+--- /dev/null
++++ b/services/storage.py
+@@ -0,0 +1,9 @@
++import json
++
++
++def load_statement(path):
++    try:
++        with open(path) as fh:
++            return json.load(fh)
++    except:
++        return None

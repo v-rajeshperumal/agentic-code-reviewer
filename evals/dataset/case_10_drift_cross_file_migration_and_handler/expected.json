@@ -1,0 +1,27 @@
+{
+  "must_flag": [
+    {
+      "file_path": "db/migrations/010_payouts.sql",
+      "line": 4,
+      "acceptable_lines": [
+        4
+      ],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Money"
+    },
+    {
+      "file_path": "api/payments.py",
+      "line": 10,
+      "acceptable_lines": [
+        8,
+        9,
+        10
+      ],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Payment Creation Endpoint"
+    }
+  ],
+  "may_flag": []
+}

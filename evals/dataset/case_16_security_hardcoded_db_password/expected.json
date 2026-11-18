@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "config/settings.py",
+      "line": 5,
+      "acceptable_lines": [
+        5
+      ],
+      "category": "SECURITY",
+      "severity": "CRITICAL",
+      "spec_reference": "Secrets Management"
+    }
+  ],
+  "may_flag": []
+}

@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "api/webhooks.ts",
+      "line": 7,
+      "acceptable_lines": [
+        7
+      ],
+      "category": "CODE_QUALITY",
+      "severity": "WARNING",
+      "spec_reference": "Async Safety"
+    }
+  ],
+  "may_flag": []
+}

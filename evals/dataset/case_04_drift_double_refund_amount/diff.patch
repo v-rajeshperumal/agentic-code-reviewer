@@ -1,0 +1,10 @@
+diff --git a/db/migrations/005_refunds.sql b/db/migrations/005_refunds.sql
+--- a/db/migrations/005_refunds.sql
++++ b/db/migrations/005_refunds.sql
+@@ -1,5 +1,6 @@
+ CREATE TABLE refunds (
+     id UUID PRIMARY KEY,
+     payment_id UUID NOT NULL REFERENCES payments(id),
++    refund_amount DOUBLE PRECISION NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+ );

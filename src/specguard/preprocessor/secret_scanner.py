@@ -6,6 +6,9 @@ from specguard.schemas import FindingCategory, Severity, ValidatedFinding, findi
 SECRET_PATTERNS = [
     ("aws_access_key", r"AKIA[0-9A-Z]{16}"),
     ("github_token", r"gh[pousr]_[0-9a-zA-Z]{36}"),
+    ("stripe_key", r"(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{16,}"),
+    ("google_api_key", r"AIza[0-9A-Za-z_\-]{35}"),
+    ("slack_token", r"xox[abprs]-[0-9A-Za-z\-]{10,}"),
     ("private_key", r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     ("generic_secret", r"(?i)(?:api_key|secret_key|auth_token|password)\s*[:=]\s*['\"][0-9a-zA-Z_\-]{16,64}['\"]"),
 ]

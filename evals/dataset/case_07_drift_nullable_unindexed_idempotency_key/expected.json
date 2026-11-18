@@ -1,0 +1,15 @@
+{
+  "must_flag": [
+    {
+      "file_path": "db/migrations/008_payment_attempts.sql",
+      "line": 4,
+      "acceptable_lines": [
+        4
+      ],
+      "category": "SPEC_DRIFT",
+      "severity": "CRITICAL",
+      "spec_reference": "Idempotency"
+    }
+  ],
+  "may_flag": []
+}

@@ -31,7 +31,10 @@ class EvidenceGate:
         candidates: list[RawCandidateFinding],
         parsed_diff: ParsedDiff,
         tool_ctx: RepoToolContext,
+        require_evidence: bool = True,
     ) -> Tuple[list[ValidatedFinding], list[ValidatedFinding], list[str]]:
+        """Resolves anchors and, unless `require_evidence=False` (ablation baseline), demotes
+        any finding whose diff or spec quote is not found verbatim."""
         inline: list[ValidatedFinding] = []
         summary: list[ValidatedFinding] = []
         audit_log: list[str] = []
@@ -53,7 +56,7 @@ class EvidenceGate:
 
             # 2. Exact diff quote verification
             file_diff_text = parsed_diff.anchored_by_file.get(cand.file_path, "")
-            if _normalize_ws(cand.evidence_diff_quote) not in _normalize_ws(file_diff_text):
+            if require_evidence and _normalize_ws(cand.evidence_diff_quote) not in _normalize_ws(file_diff_text):
                 inline_ok = False
                 reasons.append("evidence_diff_quote not matched in diff")
 
@@ -66,7 +69,9 @@ class EvidenceGate:
                         spec_body = sec_text
                         break
 
-            if not spec_body or _normalize_ws(cand.evidence_spec_quote) not in _normalize_ws(spec_body):
+            if require_evidence and (
+                not spec_body or _normalize_ws(cand.evidence_spec_quote) not in _normalize_ws(spec_body)
+            ):
                 inline_ok = False
                 reasons.append(f"evidence_spec_quote not matched in cited spec `{cand.spec_reference}`")
 

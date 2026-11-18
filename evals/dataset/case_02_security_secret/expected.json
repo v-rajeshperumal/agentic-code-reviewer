@@ -2,7 +2,10 @@
   "must_flag": [
     {
       "file_path": "api/payments.py",
-      "acceptable_lines": [1],
+      "line": 1,
+      "acceptable_lines": [
+        1
+      ],
       "category": "SECURITY",
       "severity": "CRITICAL",
       "spec_reference": "Secrets Management"

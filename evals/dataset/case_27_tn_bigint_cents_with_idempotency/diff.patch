@@ -1,0 +1,12 @@
+diff --git a/db/migrations/012_payments_v2.sql b/db/migrations/012_payments_v2.sql
+new file mode 100644
+--- /dev/null
++++ b/db/migrations/012_payments_v2.sql
+@@ -0,0 +1,7 @@
++CREATE TABLE payments_v2 (
++    id UUID PRIMARY KEY,
++    idempotency_key TEXT NOT NULL,
++    amount_cents BIGINT NOT NULL,
++    currency CHAR(3) NOT NULL
++);
++CREATE UNIQUE INDEX payments_v2_idempotency_key_idx ON payments_v2 (idempotency_key);

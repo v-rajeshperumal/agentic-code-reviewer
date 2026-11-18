@@ -1,0 +1,13 @@
+diff --git a/services/notifications.py b/services/notifications.py
+new file mode 100644
+--- /dev/null
++++ b/services/notifications.py
+@@ -0,0 +1,8 @@
++import logging
++
++logger = logging.getLogger(__name__)
++
++
++def send_receipt(user, payment):
++    mailer.send(user.email, template="receipt", payment_id=payment.id)
++    logger.info("Sent receipt user_uuid=%s payment_id=%s", user.uuid, payment.id)

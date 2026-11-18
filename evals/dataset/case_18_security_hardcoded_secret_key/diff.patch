@@ -1,0 +1,8 @@
+diff --git a/config/app.py b/config/app.py
+new file mode 100644
+--- /dev/null
++++ b/config/app.py
+@@ -0,0 +1,3 @@
++DEBUG = False
++SECRET_KEY = "insecure-session-signing-k3y-0123456789"
++ALLOWED_HOSTS = ["payments.internal"]

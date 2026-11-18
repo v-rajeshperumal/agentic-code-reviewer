@@ -1,0 +1,9 @@
+diff --git a/config/settings.py b/config/settings.py
+new file mode 100644
+--- /dev/null
++++ b/config/settings.py
+@@ -0,0 +1,4 @@
++import os
++
++PAYMENTS_API_KEY = os.environ["PAYMENTS_API_KEY"]
++DB_PASSWORD = os.environ["DB_PASSWORD"]

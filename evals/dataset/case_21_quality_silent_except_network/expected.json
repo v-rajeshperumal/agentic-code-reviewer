@@ -1,0 +1,16 @@
+{
+  "must_flag": [
+    {
+      "file_path": "services/webhooks.py",
+      "line": 7,
+      "acceptable_lines": [
+        7,
+        8
+      ],
+      "category": "CODE_QUALITY",
+      "severity": "WARNING",
+      "spec_reference": "Error Handling"
+    }
+  ],
+  "may_flag": []
+}

@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -12,15 +13,46 @@ from specguard.llm.provider import get_provider_name
 from specguard.postprocessor.evidence_gate import EvidenceGate
 from specguard.preprocessor.diff_anchor import DiffAnchorParser
 from specguard.preprocessor.spec_batcher import SpecBatcher
-from specguard.schemas import PRReviewReport
+from specguard.schemas import PRReviewReport, ValidatedFinding
 
 app = typer.Typer(help="SpecGuard: Agentic PR & System-Spec Compliance Reviewer")
 console = Console()
 
 
+PipelineMode = Literal["baseline", "agent", "full"]
+
+
+def _dedupe(findings: list[ValidatedFinding]) -> tuple[list[ValidatedFinding], list[str]]:
+    """Drops repeats of the same defect: a file matched by two specs is investigated twice,
+    and the model may re-report a secret the deterministic scanner already caught."""
+    seen: set[tuple] = set()
+    kept, audit = [], []
+    for f in findings:
+        keys = {(f.file_path, f.line, f.category)}
+        if f.fingerprint:
+            keys.add(f.fingerprint)
+        if keys & seen:
+            audit.append(f"Deduplicated `{f.title}` ({f.file_path}:{f.line})")
+            continue
+        seen.update(keys)
+        kept.append(f)
+    return kept, audit
+
+
 def run_review_pipeline(
-    repo_root: Path, raw_diff: str, use_verifier: bool = True, reuse_cassettes: bool = False
+    repo_root: Path,
+    raw_diff: str,
+    use_verifier: bool = True,
+    reuse_cassettes: bool = False,
+    mode: PipelineMode | None = None,
 ) -> PRReviewReport:
+    """Runs one review. `mode` selects the ablation configuration:
+
+    - baseline: single structured call per spec, no tools, no verifier, no quote checks
+    - agent:    tool-using investigator + EvidenceGate, no verifier
+    - full:     agent + adversarial verifier (default)
+    """
+    mode = mode or ("full" if use_verifier else "agent")
     parser = DiffAnchorParser()
     parsed = parser.parse(raw_diff)
 
@@ -37,21 +69,30 @@ def run_review_pipeline(
 
     for spec_doc, files in batches:
         batch_diff = "\n\n".join(parsed.anchored_by_file[f] for f in files if f in parsed.anchored_by_file)
-        candidates, tool_ctx, _ = investigator.investigate_batch(spec_doc, batch_diff)
+        if mode == "baseline":
+            candidates, tool_ctx, _ = investigator.single_shot_batch(spec_doc, batch_diff)
+        else:
+            candidates, tool_ctx, _ = investigator.investigate_batch(spec_doc, batch_diff)
 
         surviving = []
         for cand in candidates:
-            if use_verifier:
+            if mode == "full":
                 verdict = verifier.verify(spec_doc, cand, batch_diff)
                 if not verdict.keep:
                     all_audit.append(f"Verifier rejected `{cand.title}`: {verdict.reason}")
                     continue
             surviving.append(cand)
 
-        inline, summary, audit = gate.validate_candidates(surviving, parsed, tool_ctx)
+        inline, summary, audit = gate.validate_candidates(
+            surviving, parsed, tool_ctx, require_evidence=(mode != "baseline")
+        )
         all_inline.extend(inline)
         all_summary.extend(summary)
         all_audit.extend(audit)
+
+    all_inline, dedupe_audit = _dedupe(all_inline)
+    all_summary, dedupe_audit_2 = _dedupe(all_summary)
+    all_audit.extend(dedupe_audit + dedupe_audit_2)
 
     summary_text = (
         f"Reviewed {len(parsed.anchored_by_file)} modified file(s) across {len(batches)} governing spec(s)."
@@ -102,13 +143,14 @@ def review(
 @app.command("eval")
 def eval_cmd(
     dataset_dir: Path = typer.Option(Path("evals/dataset"), help="Golden dataset directory"),
-    ablation: bool = typer.Option(False, help="Run ablation comparison table"),
+    ablation: bool = typer.Option(False, help="Compare baseline, agent-only and full configurations"),
+    runs: int = typer.Option(1, min=1, help="Repeat each configuration N times and report mean ± std"),
 ) -> None:
     """Score the pipeline against the golden dataset (run from the repo root)."""
     # `evals/` lives at the repo root, outside the installed package.
     sys.path.insert(0, str(Path.cwd()))
     from evals.run_evals import execute_eval_suite
-    execute_eval_suite(dataset_dir, ablation=ablation)
+    execute_eval_suite(dataset_dir, ablation=ablation, runs=runs)
 
 
 @app.command("record-cassettes")
@@ -134,8 +176,10 @@ def record_cassettes(
     for i, case_dir in enumerate(case_dirs, 1):
         console.print(f"[{i}/{len(case_dirs)}] {case_dir.name} via {provider}")
         diff_text = (case_dir / "diff.patch").read_text(encoding="utf-8")
-        # Verifier on, so both the investigator and verifier cassettes get written.
-        run_review_pipeline(Path("."), diff_text, use_verifier=True, reuse_cassettes=resume)
+        # Baseline, then full (investigator + verifier); the agent-only ablation reuses
+        # the full run's investigator cassette, so these two cover every eval config.
+        for mode in ("baseline", "full"):
+            run_review_pipeline(Path("."), diff_text, reuse_cassettes=resume, mode=mode)
 
     console.print(f"[green]Recorded {len(case_dirs)} case(s) into evals/cassettes/.[/green]")
 

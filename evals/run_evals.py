@@ -1,73 +1,100 @@
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
+
 import numpy as np
 from rich.console import Console
 from rich.table import Table
 from scipy.optimize import linear_sum_assignment
+
 from specguard.cli import run_review_pipeline
+from specguard.llm.cassette import clear_session_cache
 from specguard.schemas import ValidatedFinding
 
 console = Console()
 
+# Configurations shown in the ablation table, in order.
+ABLATION_CONFIGS = [
+    ("Single-Shot Baseline", "baseline"),
+    ("Investigator + Tools + EvidenceGate", "agent"),
+    ("Full SpecGuard + Verifier", "full"),
+]
 
-def _bipartite_score(
-    preds: list[ValidatedFinding], must_flag: list[dict], may_flag: list[dict]
-) -> tuple[int, int, int, int]:
-    """One-to-one Hungarian matching on line distance within acceptable_lines."""
-    if not must_flag:
-        unmatched_fp = [
-            p for p in preds
-            if not any(
-                p.file_path == m["file_path"]
-                and p.category.value == m["category"]
-                and p.line in m["acceptable_lines"]
-                for m in may_flag
-            )
-        ]
-        return 0, len(unmatched_fp), 0, 0
-
-    if not preds:
-        return 0, 0, len(must_flag), 0
-
-    BIG = 10_000.0
-    cost = np.full((len(preds), len(must_flag)), BIG)
-    for i, p in enumerate(preds):
-        for j, g in enumerate(must_flag):
-            if p.file_path == g["file_path"] and p.category.value == g["category"]:
-                if p.line in g["acceptable_lines"]:
-                    cost[i, j] = min(abs(p.line - l) for l in g["acceptable_lines"])
-
-    row_ind, col_ind = linear_sum_assignment(cost)
-    tp = 0
-    exact_line = 0
-    matched_pred_indices = set()
-    for r, c in zip(row_ind, col_ind):
-        if cost[r, c] < BIG:
-            tp += 1
-            matched_pred_indices.add(r)
-            if cost[r, c] == 0:
-                exact_line += 1
-
-    fp = 0
-    for i, p in enumerate(preds):
-        if i in matched_pred_indices:
-            continue
-        is_may = any(
-            p.file_path == m["file_path"]
-            and p.category.value == m["category"]
-            and p.line in m["acceptable_lines"]
-            for m in may_flag
-        )
-        if not is_may:
-            fp += 1
-
-    fn = len(must_flag) - tp
-    return tp, fp, fn, exact_line
+METRICS = ["precision", "recall", "line_acc", "severity_acc", "citation_acc", "latency_s"]
 
 
-def _eval_config(dataset_dir: Path, use_verifier: bool) -> dict:
-    total_tp = total_fp = total_fn = total_exact = 0
+@dataclass
+class CaseScore:
+    tp: int = 0
+    fp: int = 0
+    fn: int = 0
+    exact_line: int = 0
+    severity_ok: int = 0
+    citation_ok: int = 0
+
+    def __iadd__(self, other: "CaseScore") -> "CaseScore":
+        for name in self.__dataclass_fields__:
+            setattr(self, name, getattr(self, name) + getattr(other, name))
+        return self
+
+
+def _matches(pred: ValidatedFinding, gold: dict) -> bool:
+    return (
+        pred.file_path == gold["file_path"]
+        and pred.category.value == gold["category"]
+        and pred.line in gold["acceptable_lines"]
+    )
+
+
+def _same_citation(pred: ValidatedFinding, gold: dict) -> bool:
+    return pred.spec_reference.strip().lower() == gold["spec_reference"].strip().lower()
+
+
+def _bipartite_score(preds: list[ValidatedFinding], must_flag: list[dict], may_flag: list[dict]) -> CaseScore:
+    """One-to-one Hungarian matching between predictions and must_flag golds.
+
+    A pair can match only if file, category and line (within `acceptable_lines`)
+    agree. Among valid pairings, the solver prefers predictions closest to the
+    gold's primary `line`. Unmatched predictions that fall in a `may_flag` window
+    are neither rewarded nor penalized.
+    """
+    score = CaseScore()
+    matched_preds: set[int] = set()
+
+    if must_flag and preds:
+        BIG = 10_000.0
+        cost = np.full((len(preds), len(must_flag)), BIG)
+        for i, p in enumerate(preds):
+            for j, g in enumerate(must_flag):
+                if _matches(p, g):
+                    cost[i, j] = abs(p.line - g["line"])
+
+        for r, c in zip(*linear_sum_assignment(cost)):
+            if cost[r, c] >= BIG:
+                continue
+            pred, gold = preds[r], must_flag[c]
+            matched_preds.add(r)
+            score.tp += 1
+            score.exact_line += int(pred.line == gold["line"])
+            score.severity_ok += int(pred.severity.value == gold["severity"])
+            score.citation_ok += int(_same_citation(pred, gold))
+
+    score.fn = len(must_flag) - score.tp
+    score.fp = sum(
+        1
+        for i, p in enumerate(preds)
+        if i not in matched_preds and not any(_matches(p, m) for m in may_flag)
+    )
+    return score
+
+
+def _ratio(num: int, den: int) -> float:
+    return num / den if den else 1.0
+
+
+def _eval_config(dataset_dir: Path, mode: str) -> dict:
+    total = CaseScore()
     t0 = time.perf_counter()
 
     for case_dir in sorted(dataset_dir.iterdir()):
@@ -75,50 +102,63 @@ def _eval_config(dataset_dir: Path, use_verifier: bool) -> dict:
             continue
         diff_text = (case_dir / "diff.patch").read_text(encoding="utf-8")
         expected = json.loads((case_dir / "expected.json").read_text(encoding="utf-8"))
-        report = run_review_pipeline(Path("."), diff_text, use_verifier=use_verifier)
-        tp, fp, fn, exact = _bipartite_score(
+        report = run_review_pipeline(Path("."), diff_text, mode=mode)
+        total += _bipartite_score(
             report.inline_findings, expected.get("must_flag", []), expected.get("may_flag", [])
         )
-        total_tp += tp
-        total_fp += fp
-        total_fn += fn
-        total_exact += exact
 
-    elapsed = time.perf_counter() - t0
-    precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) else 1.0
-    recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) else 1.0
-    line_acc = total_exact / total_tp if total_tp else 1.0
     return {
-        "precision": precision,
-        "recall": recall,
-        "line_acc": line_acc,
-        "latency_s": elapsed,
+        "precision": _ratio(total.tp, total.tp + total.fp),
+        "recall": _ratio(total.tp, total.tp + total.fn),
+        "line_acc": _ratio(total.exact_line, total.tp),
+        "severity_acc": _ratio(total.severity_ok, total.tp),
+        "citation_acc": _ratio(total.citation_ok, total.tp),
+        "latency_s": time.perf_counter() - t0,
     }
 
 
-def execute_eval_suite(dataset_dir: Path, ablation: bool = False) -> None:
-    configs = [("Tools + EvidenceGate (No Verifier)", False), ("Full Agent + Verifier", True)] if ablation else [
-        ("Full Agent + Verifier", True)
-    ]
+def _fmt(values: list[float], suffix: str = "") -> str:
+    mean = float(np.mean(values))
+    if len(values) == 1:
+        return f"{mean:.2f}{suffix}"
+    return f"{mean:.2f} ± {float(np.std(values)):.2f}{suffix}"
 
-    table = Table(title="SpecGuard Evaluation & Ablation Results")
-    table.add_column("Configuration")
-    table.add_column("Precision")
-    table.add_column("Recall")
-    table.add_column("Exact Line Acc")
-    table.add_column("Total Latency")
 
-    for label, use_ver in configs:
-        res = _eval_config(dataset_dir, use_verifier=use_ver)
+def execute_eval_suite(dataset_dir: Path, ablation: bool = False, runs: int = 1) -> list[dict]:
+    configs = ABLATION_CONFIGS if ablation else [ABLATION_CONFIGS[-1]]
+
+    title = "SpecGuard Evaluation & Ablation Results"
+    if runs > 1:
+        title += f" (mean ± std over {runs} runs)"
+    table = Table(title=title)
+    for column in ["Configuration", "Precision", "Recall", "Exact Line Acc", "Severity Acc", "Citation Acc", "Latency"]:
+        table.add_column(column)
+
+    per_config: dict[str, list[dict]] = {mode: [] for _, mode in configs}
+    for _ in range(runs):
+        # Each run is an independent sample, so forget the previous run's results.
+        # Configs inside one run still share an investigation (agent vs full differ
+        # only by the verifier), which keeps the ablation an apples-to-apples comparison.
+        clear_session_cache()
+        for _, mode in configs:
+            per_config[mode].append(_eval_config(dataset_dir, mode))
+
+    rows = []
+    for label, mode in configs:
+        summary = {m: [r[m] for r in per_config[mode]] for m in METRICS}
+        rows.append({"configuration": label, **{m: float(np.mean(v)) for m, v in summary.items()}})
         table.add_row(
             label,
-            f"{res['precision']:.2f}",
-            f"{res['recall']:.2f}",
-            f"{res['line_acc']:.2f}",
-            f"{res['latency_s']:.2f}s",
+            _fmt(summary["precision"]),
+            _fmt(summary["recall"]),
+            _fmt(summary["line_acc"]),
+            _fmt(summary["severity_acc"]),
+            _fmt(summary["citation_acc"]),
+            _fmt(summary["latency_s"], "s"),
         )
 
     console.print(table)
+    return rows
 
 
 if __name__ == "__main__":
